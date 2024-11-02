@@ -232,3 +232,77 @@ More bugfixes. I work so hard for my beloved users.
   - junit: `5.9.3` -> `5.10.3`
   - hamcrest: `2.2` -> `3.0`
   - jimfs: `1.2` -> `1.3.0`
+
+# 2.5.0
+
+`2.5.0` brings contributions from 3 of our lovely enigma users in addition to our regular duo, bringing you some reworks to long-broken features and fixing some long-bothersome bugs!
+
+- new [theme system and theme](https://github.com/QuiltMC/enigma/pull/216) (thanks [supersaiyansubtlety](https://github.com/supersaiyansubtlety)!)
+  - adds a new theme: darcerula
+    - this theme is yet darker than the old dark theme, for those that appreciate a pitch black atmosphere for their mappings
+  - moves theme configurations into a separate `/theme/` directory in the config folder
+    - declutters the `main.toml` file
+    - old theme configs will not be migrated, you'll have to manually transfer your old custom themes
+  - cleans up a lot of backend for themes, allowing us to easily add new themes in the future
+- added indexing for libraries in addition to the main JAR
+  - separate step from normal indexing, performed after
+  - disabled by default for all existing plugin-based indexers
+    - can be enabled by setting the `index_libraries` property to true in service's config in the enigma profile
+    - refer to Javadocs in `JarIndexerService` for how to implement this property, we recommend adding it!
+  - currently, only `Record` and `Object` from the JDK are indexed as libraries by default
+- API changes around indexing
+  - `JarIndex#indexJar` no longer receives a scope
+    - the `ClassProvider` parameter has been replaced with a `ProjectClassProvider`, providing classes and scope for both the main jar and libraries
+  - `JarIndexerService#acceptJar` now takes a `ProjectClassProvider` instead of a `ClassProvider`
+    - the scope has not been removed, and if the service is configured to accept libraries will be the main scope on first run and the library scope on the second
+- added name proposal for record components
+  -  names for record getters are automatically proposed as their corresponding field is named
+  -  methods are linked to fields based on bytecode
+    - this is a fail-fast solution: if there is no method perfectly matching the expected code for a record getter no mapping will be proposed
+    - this allows us to sucessfully propose mappings in situations such as [hashed mojmap](https://github.com/quiltmc/mappings-hasher) where the record getter method mismatches with the component name
+  - works using two new services: `enigma:record_component_indexer` and `enigma:record_component_proposer`
+- deprecated `EntryMapping#DEFAULT` to be renamed to `EntryMapping#OBFUSCATED`
+- fixed proposed method validation and main plugin id validation using different regexes to validate
+  - it was possible to write a valid plugin ID that would crash when used on a proposed mapping
+- fixed issues with stat generation and records
+  - ignore parameters of canonical constructors for records as they can be hidden by decompilers
+  - ignore parameters of equals() method for the same reason
+- fixed mapping stats filtering
+  - fixed issues with GUI when using dots to filter
+  - fixed issues with graph when using slashes to filter
+- fixed a crash when cancelling a class rename initiated from the class tree (thanks [notevenjoking](https://github.com/770grappenmaker)!)
+- fixed a possible crash when parsing recent files (thanks [pitheguy](https://github.com/PiTheGuy)!)
+- fixed entry navigator ignoring which types are currently editable
+- fixed mappings chooser not accepting directories
+- fixed missing translations in mappings chooser
+- fixed a bunch more scaling issues (thanks [supersaiyansubtlety](https://github.com/supersaiyansubtlety) again!)
+  - fixed config values sometimes being messed up when changing scale and restarting
+  - fixed editor font size sometimes being overwritten
+- fixed possibly incorrect save location when saving from the unsaved warning dialogue (thanks again [pitheguy](https://github.com/PiTheGuy)!)
+
+# 2.5.1
+
+Hot off the tail of `2.5`, enigma `2.5.1` features some minor improvements to `drop-invalid-mappings` and the usual wealth of bugfixes.
+But honey, I know you're just here to see if you can remove the ASM snapshot repo from your buildscript. I'm happy to report that you can!
+
+- improved `drop-invalid-mappings` command
+  - improved logging
+    - do not print lines about writing new mappings when no changes have occurred
+    - print stats after completion on how many mappings were dropped
+  - improved behaviour for dropping
+    - drop methods that have no name and no valid parameters
+    - drop parameters whose index is outside their parent method's scope of valid indices
+  - added unit testing
+- fixed various issues with javadoc on parameters
+  - fixed comments on parameters sometimes being improperly written by the tinyv2 writer
+  - fixed javadoc on method overrides not properly finding parameter names
+  - fixed javadoc not always refreshing on parameter name updates
+- fixed entry navigator pointing to the wrong entry after an entry's token type was changed
+  - the most common time this would occur was when you renamed an obfuscated entry with the default navigator, and since there were then a different amount of obfuscated entries, the navigator would point to a different one than previously
+  - this fix is thanks to [pitheguy](https://github.com/PiTheGuy)!
+- fixed identifier panel mislabelling inner classes' outer class as their "superclass"
+- fixed stats of parent classes not reloading when their entries are mapped from a child class
+- fixed folder icons in the "obfuscated classes" docker not being visible
+- updated dependencies
+  - asm: `9.8-SNAPSHOT` -> `9.7.1`
+    - you can now remove the ASM snapshot repo from your buildscript when depending on enigma through maven/gradle!
