@@ -5,6 +5,7 @@ import org.quiltmc.enigma.api.analysis.EntryReference;
 import org.quiltmc.enigma.api.class_handle.ClassHandle;
 import org.quiltmc.enigma.api.class_handle.ClassHandleError;
 import org.quiltmc.enigma.api.event.ClassHandleListener;
+import org.quiltmc.enigma.api.source.TokenStore;
 import org.quiltmc.enigma.gui.BrowserCaret;
 import org.quiltmc.enigma.gui.EditableType;
 import org.quiltmc.enigma.gui.Gui;
@@ -96,7 +97,11 @@ public class EditorPanel {
 	private boolean shouldNavigateOnClick;
 
 	private int fontSize = 12;
-	private final Map<TokenType, BoxHighlightPainter> boxHighlightPainters;
+	private final BoxHighlightPainter obfuscatedPainter;
+	private final BoxHighlightPainter proposedPainter;
+	private final BoxHighlightPainter deobfuscatedPainter;
+	private final BoxHighlightPainter debugPainter;
+	public final BoxHighlightPainter fallbackPainter;
 
 	private final List<EditorActionListener> listeners = new ArrayList<>();
 
@@ -132,7 +137,11 @@ public class EditorPanel {
 		this.errorTextArea.setEditable(false);
 		this.errorTextArea.setFont(ScaleUtil.getFont(Font.MONOSPACED, Font.PLAIN, 10));
 
-		this.boxHighlightPainters = ThemeUtil.getBoxHighlightPainters();
+		this.obfuscatedPainter = ThemeUtil.createObfuscatedPainter();
+		this.proposedPainter = ThemeUtil.createProposedPainter();
+		this.debugPainter = ThemeUtil.createDebugPainter();
+		this.fallbackPainter = ThemeUtil.createFallbackPainter();
+		this.deobfuscatedPainter = ThemeUtil.createDeobfuscatedPainter();
 
 		this.editor.addMouseListener(new MouseAdapter() {
 			@Override
@@ -165,6 +174,7 @@ public class EditorPanel {
 					}
 				} else if (KeyBinds.EDITOR_QUICK_FIND.matches(event)) {
 					// prevent navigating on click when quick find activated
+					EditorPanel.this.shouldNavigateOnClick = false; // CTRL
 				} else if (KeyBinds.EDITOR_ZOOM_IN.matches(event)) {
 					EditorPanel.this.offsetEditorZoom(2);
 				} else if (KeyBinds.EDITOR_ZOOM_OUT.matches(event)) {
@@ -180,7 +190,7 @@ public class EditorPanel {
 				if (ref == null) return;
 				if (!EditorPanel.this.controller.getProject().isRenamable(ref)) return;
 
-				if (!event.isControlDown() && !event.isAltDown() && Character.isJavaIdentifierPart(event.getKeyChar())) {
+				if (!event.isControlDown() && !event.isAltDown() && Character.isJavaIdentifierStart(event.getKeyChar())) {
 					EnigmaProject project = gui.getController().getProject();
 					EntryReference<Entry<?>, Entry<?>> reference = project.getRemapper().deobfuscate(EditorPanel.this.cursorReference);
 					Entry<?> entry = reference.getNameableEntry();
@@ -464,7 +474,7 @@ public class EditorPanel {
 			this.editor.getHighlighter().removeAllHighlights();
 			this.editor.setText(source.toString());
 
-			this.setHighlightedTokens(source.getHighlightedTokens());
+			this.setHighlightedTokens(source.getTokenStore(), source.getHighlightedTokens());
 			if (this.source != null) {
 				this.editor.setCaretPosition(newCaretPos);
 
@@ -484,32 +494,30 @@ public class EditorPanel {
 		}
 	}
 
-	public void setHighlightedTokens(Map<TokenType, ? extends Collection<Token>> tokens) {
+	public void setHighlightedTokens(TokenStore tokenStore, Map<TokenType, ? extends Collection<Token>> tokens) {
 		// remove any old highlighters
 		this.editor.getHighlighter().removeAllHighlights();
 
-		if (this.boxHighlightPainters != null) {
-			BoxHighlightPainter proposedPainter = this.boxHighlightPainters.get(TokenType.JAR_PROPOSED);
+		for (TokenType type : tokens.keySet()) {
+			BoxHighlightPainter typePainter = switch (type) {
+				case OBFUSCATED -> this.obfuscatedPainter;
+				case DEOBFUSCATED -> this.deobfuscatedPainter;
+				case DEBUG -> this.debugPainter;
+				case JAR_PROPOSED, DYNAMIC_PROPOSED -> this.proposedPainter;
+			};
 
-			for (TokenType type : tokens.keySet()) {
-				BoxHighlightPainter painter = this.boxHighlightPainters.get(type);
+			for (Token token : tokens.get(type)) {
+				BoxHighlightPainter tokenPainter = typePainter;
+				EntryReference<Entry<?>, Entry<?>> reference = this.getReference(token);
 
-				if (painter != null) {
-					for (Token token : tokens.get(type)) {
-						EntryReference<Entry<?>, Entry<?>> reference = this.getReference(token);
-						BoxHighlightPainter tokenPainter;
-
-						if (reference != null) {
-							EditableType t = EditableType.fromEntry(reference.entry);
-							boolean editable = t == null || this.gui.isEditable(t);
-							tokenPainter = editable ? painter : proposedPainter;
-						} else {
-							tokenPainter = painter;
-						}
-
-						this.addHighlightedToken(token, tokenPainter);
-					}
+				if (reference != null) {
+					EditableType t = EditableType.fromEntry(reference.entry);
+					boolean editable = t == null || this.gui.isEditable(t);
+					boolean fallback = tokenStore.isFallback(token);
+					tokenPainter = editable ? (fallback ? this.fallbackPainter : typePainter) : this.proposedPainter;
 				}
+
+				this.addHighlightedToken(token, tokenPainter);
 			}
 		}
 

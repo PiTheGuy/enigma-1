@@ -1,5 +1,6 @@
 package org.quiltmc.enigma.gui.element;
 
+import org.quiltmc.enigma.api.source.TokenType;
 import org.quiltmc.enigma.gui.ClassSelector;
 import org.quiltmc.enigma.gui.Gui;
 import org.quiltmc.enigma.gui.docker.ClassesDocker;
@@ -22,6 +23,7 @@ public class ClassSelectorPopupMenu {
 	private final JMenuItem renamePackage = new JMenuItem();
 	private final JMenuItem movePackage = new JMenuItem();
 	private final JMenuItem renameClass = new JMenuItem();
+	private final JMenuItem regenerateStats = new JMenuItem();
 	private final JMenuItem toggleMapping = new JMenuItem();
 	private final JMenuItem expandAll = new JMenuItem();
 	private final JMenuItem collapseAll = new JMenuItem();
@@ -34,6 +36,7 @@ public class ClassSelectorPopupMenu {
 		this.ui.add(this.renamePackage);
 		this.ui.add(this.movePackage);
 		this.ui.add(this.renameClass);
+		this.ui.add(this.regenerateStats);
 		this.ui.add(this.toggleMapping);
 		this.ui.addSeparator();
 		this.ui.add(this.expandAll);
@@ -59,6 +62,8 @@ public class ClassSelectorPopupMenu {
 
 			this.gui.toggleMappingFromEntry(classEntry);
 		});
+
+		this.regenerateStats.addActionListener(a -> this.gui.reloadStats(this.selector.getSelectedClassObf(), false));
 
 		this.expandAll.addActionListener(a -> this.selector.expandAll());
 		this.collapseAll.addActionListener(a -> this.selector.collapseAll());
@@ -99,7 +104,12 @@ public class ClassSelectorPopupMenu {
 			}
 		}
 
-		String input = JOptionPane.showInputDialog(this.gui.getFrame(), I18n.translate("popup_menu.class_selector.package_rename.title"), pathString.toString());
+		String title = switch (mode) {
+			case MOVE -> I18n.translateFormatted("popup_menu.class_selector.package_rename.move_title", pathString.toString());
+			case REFACTOR -> I18n.translateFormatted("popup_menu.class_selector.package_rename.rename_title", pathString.toString());
+		};
+
+		String input = JOptionPane.showInputDialog(this.gui.getFrame(), title, pathString.toString());
 		if (input != null) {
 			this.createPackageRenamer(mode).renamePackage(pathString.toString(), input);
 		}
@@ -118,10 +128,13 @@ public class ClassSelectorPopupMenu {
 		// only enable rename package if selected path is *not* a class with no package
 		this.renamePackage.setEnabled(selected == null || selector.getSelectedClassDeobf().getPackageName() != null);
 
+		// only enable regenerate stats if selected path is a class
+		this.regenerateStats.setEnabled(selected != null);
+
 		// update toggle mapping text to match
 		this.toggleMapping.setEnabled(selected != null);
 		if (selected != null) {
-			if (this.gui.getController().getProject().getRemapper().extendedDeobfuscate(selected).isDeobfuscated()) {
+			if (this.gui.getController().getProject().getRemapper().extendedDeobfuscate(selected).getType() == TokenType.DEOBFUSCATED) {
 				this.toggleMapping.setText(I18n.translate("popup_menu.reset_obfuscated"));
 			} else {
 				this.toggleMapping.setText(I18n.translate("popup_menu.mark_deobfuscated"));
@@ -138,5 +151,6 @@ public class ClassSelectorPopupMenu {
 		this.expandAll.setText(I18n.translate("popup_menu.class_selector.expand_all"));
 		this.collapseAll.setText(I18n.translate("popup_menu.class_selector.collapse_all"));
 		this.toggleMapping.setText(I18n.translate("popup_menu.mark_deobfuscated"));
+		this.regenerateStats.setText(I18n.translate("popup_menu.class_selector.regenerate_stats"));
 	}
 }

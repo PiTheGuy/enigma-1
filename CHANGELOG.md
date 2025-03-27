@@ -23,8 +23,6 @@ The largest Enigma update ever brings you dozens of changes across the user inte
 - wrote up piles of documentation
 - removed support for the old Recaf and Tiny V1 mapping formats
 - removed old internal config API
-
-
 - implemented automatic format detection in all commands
 - greatly improved command help
   - include descriptions of what each argument does in errors
@@ -32,8 +30,6 @@ The largest Enigma update ever brings you dozens of changes across the user inte
     - lists all possible commands
     - includes detailed descriptions of each command's function
 - normalised all command names to `kebab-case`
-
-
 - statistics got a huge rework
   - stat icons in the class tree dockers have been expanded to now show on packages as well as classes
   - optimise stat regeneration for single classes
@@ -62,8 +58,6 @@ The largest Enigma update ever brings you dozens of changes across the user inte
 - added some neat debug utils if you run with the `--development` flag
   - currently, this includes a view of the internal mapping tree
 - removed access modifier editing
-
-
 - fix yet more bugs with statistic accuracy
 - fix the cancel button in the "rename package" window causing a crash
 - fix documenting constructors (from Fabric upstream, with permission!)
@@ -306,3 +300,69 @@ But honey, I know you're just here to see if you can remove the ASM snapshot rep
 - updated dependencies
   - asm: `9.8-SNAPSHOT` -> `9.7.1`
     - you can now remove the ASM snapshot repo from your buildscript when depending on enigma through maven/gradle!
+
+# 2.5.2
+
+In our bugfix era.
+
+- fixed stability issues introduced with the new validation on parameter indices
+- added missing translations for library indexing
+- fixed entry navigator pointing to negative entry indices after renaming items (thanks [pitheguy](https://github.com/PiTheGuy)!)
+
+# 2.5.3
+
+in the code straight up 'fixin it'. and by 'it' let's justr say. my bugs
+
+- fixed two issues with `dropInvalidMappings`
+  - fixed recursive search for mapping sometimes failing and dropping parents of mapped entries
+  - fixed an extremely rare case where methods with improper `max_locals` attributes would lose their args
+
+# 2.6.0
+
+My beloved users. Did you miss me?
+The latest release of everyone's favourite program features major upgrades to both name proposal in the backend and package renaming in the GUI.
+
+- improved package renaming in the GUI
+  - fixed various possible crashes
+  - a confirmation dialogue containing samples of renames to be applied will now be shown before applying renames
+    - this ensures that an unexpected result will not be produced, as there is no undo functionality currently
+  - made testing for package renaming logic more robust
+- made some major changes to name proposal
+  - added a new boolean in `NameProposalService`: `isFallback()`
+    - this boolean marks all mappings proposed by the service as fallback, changing their behaviour
+    - fallback names will not count towards stats by default
+    - fallback names will have a different colour in the UI
+    - fallback names do not have their own token types, and are expected to be less reliably high-quality names than normal proposed mappings
+  - added a new method in `NameProposalService`: `validateProposedMapping(Entry<?>, EntryMapping, boolean)`
+    - this method is called on proposed mappings to validate them
+    - this can be used to reduce or heighten the strictness of validating mappings proposed by your service
+    - do not override this method unless you know what you're doing!
+  - dynamically proposed names will now also be validated
+    - this may break plugins using previously unsupported behaviour, such as proposing token types other than `DYNAMIC_PROPOSED`
+  - added an `Enigma` object as context for bytecode-based name proposal
+    - an `Enigma` object is also now accessible in dynamic proposal via the `EntryRemapper` object
+  - greatly increased unit testing for name proposal
+- added new `readMappings(Path)` and `readMappings(Path, ProgressListener)` API method to `Enigma`
+  - these are a simple way to read mappings!
+- added extensive class-level javadoc for `TypeDescriptor`
+- fixed `dropInvalidMappings` taking two runs to successfully drop all invalid/empty mappings in some cases
+
+# 2.6.1
+
+day two bugfix release for my all name proposal girlies out there in the world
+
+- fix an NPE that could occur when proposing a null mapping
+
+# 2.6.2
+
+A wealth of bugfixes brought to you by rai, iota, and friends. You'll be rich. Take my hand.
+
+- fixed CFR and vineflower not allowing renames on methods named 'new'
+- fixed renames being started when pressing non-letter keys such as escape while hovering an entry (thanks [pitheguy](https://github.com/PiTheGuy)!)
+- fixed inheritance for JRE classes not being indexed
+- fixed a possible stack overflow in `IndexEntryResolver`
+- fixed an issue with similarly-named classes causing the token highlighter to explode (thanks [pitheguy](https://github.com/PiTheGuy)!)
+- fixed translations for mapping formats not properly displaying
+- fixed deobfuscation level icons not immediately updating after stat generation completes (thanks [pitheguy](https://github.com/PiTheGuy)!)
+- improved wording of some save dialogs (thanks [pitheguy](https://github.com/PiTheGuy)!)
+- improved `PackageIndex` javadoc

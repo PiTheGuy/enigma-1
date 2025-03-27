@@ -41,7 +41,6 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -72,7 +71,7 @@ public class EnigmaProject {
 		this.jarChecksum = jarChecksum;
 
 		this.mappingsIndex = mappingsIndex;
-		this.remapper = EntryRemapper.mapped(jarIndex, this.mappingsIndex, proposedNames, new HashEntryTree<>(), this.enigma.getNameProposalServices());
+		this.remapper = EntryRemapper.mapped(enigma, jarIndex, this.mappingsIndex, proposedNames, new HashEntryTree<>(), this.enigma.getNameProposalServices());
 	}
 
 	/**
@@ -91,12 +90,12 @@ public class EnigmaProject {
 			EntryTree<EntryMapping> mergedTree = EntryTreeUtil.merge(jarProposedMappings, mappings);
 
 			this.mappingsIndex.indexMappings(mergedTree, progress);
-			this.remapper = EntryRemapper.mapped(this.jarIndex, this.mappingsIndex, jarProposedMappings, mappings, this.enigma.getNameProposalServices());
+			this.remapper = EntryRemapper.mapped(this.enigma, this.jarIndex, this.mappingsIndex, jarProposedMappings, mappings, this.enigma.getNameProposalServices());
 		} else if (!jarProposedMappings.isEmpty()) {
 			this.mappingsIndex.indexMappings(jarProposedMappings, progress);
-			this.remapper = EntryRemapper.mapped(this.jarIndex, this.mappingsIndex, jarProposedMappings, new HashEntryTree<>(), this.enigma.getNameProposalServices());
+			this.remapper = EntryRemapper.mapped(this.enigma, this.jarIndex, this.mappingsIndex, jarProposedMappings, new HashEntryTree<>(), this.enigma.getNameProposalServices());
 		} else {
-			this.remapper = EntryRemapper.empty(this.jarIndex, this.enigma.getNameProposalServices());
+			this.remapper = EntryRemapper.empty(this.enigma, this.jarIndex, this.enigma.getNameProposalServices());
 		}
 
 		// update dynamically proposed names
@@ -143,26 +142,29 @@ public class EnigmaProject {
 	}
 
 	private Collection<Entry<?>> dropMappings(EntryTree<EntryMapping> mappings, ProgressListener progress) {
+		MappingsChecker.Dropper dropper = new MappingsChecker.Dropper();
+
 		// drop mappings that don't match the jar
 		MappingsChecker checker = new MappingsChecker(this, this.jarIndex, mappings);
-		MappingsChecker.Dropped droppedBroken = checker.dropBrokenMappings(progress);
 
-		Map<Entry<?>, String> droppedBrokenMappings = droppedBroken.getDroppedMappings();
+		checker.collectBrokenMappings(progress, dropper);
+
+		Map<Entry<?>, String> droppedBrokenMappings = dropper.getPendingDroppedMappings();
 		for (Map.Entry<Entry<?>, String> mapping : droppedBrokenMappings.entrySet()) {
 			Logger.warn("Couldn't find {} ({}) in jar. Mapping was dropped.", mapping.getKey(), mapping.getValue());
 		}
 
-		MappingsChecker.Dropped droppedEmpty = checker.dropEmptyMappings(progress);
+		dropper.applyPendingDrops(mappings);
+		checker.collectEmptyMappings(progress, dropper);
 
-		Map<Entry<?>, String> droppedEmptyMappings = droppedEmpty.getDroppedMappings();
+		Map<Entry<?>, String> droppedEmptyMappings = dropper.getPendingDroppedMappings();
 		for (Map.Entry<Entry<?>, String> mapping : droppedEmptyMappings.entrySet()) {
 			Logger.warn("{} ({}) was empty. Mapping was dropped.", mapping.getKey(), mapping.getValue());
 		}
 
-		Collection<Entry<?>> droppedMappings = new HashSet<>();
-		droppedMappings.addAll(droppedBrokenMappings.keySet());
-		droppedMappings.addAll(droppedEmptyMappings.keySet());
-		return droppedMappings;
+		dropper.applyPendingDrops(mappings);
+
+		return dropper.getDroppedMappings().keySet();
 	}
 
 	public boolean isNavigable(Entry<?> obfEntry) {
@@ -170,7 +172,7 @@ public class EnigmaProject {
 			return false;
 		}
 
-		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(obfEntry, this);
+		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(obfEntry);
 	}
 
 	public boolean isRenamable(Entry<?> obfEntry) {
@@ -211,7 +213,7 @@ public class EnigmaProject {
 			return false;
 		}
 
-		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(obfEntry, this);
+		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(obfEntry);
 	}
 
 	private static boolean isEnumValueOfMethod(ClassDefEntry parent, MethodEntry method) {
@@ -237,13 +239,55 @@ public class EnigmaProject {
 	}
 
 	public boolean isSynthetic(Entry<?> entry) {
-		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(entry, this) && this.jarIndex.getIndex(EntryIndex.class).getEntryAccess(entry).isSynthetic();
+		return this.jarIndex.getIndex(EntryIndex.class).hasEntry(entry) && this.jarIndex.getIndex(EntryIndex.class).getEntryAccess(entry).isSynthetic();
 	}
 
 	public boolean isAnonymousOrLocal(ClassEntry classEntry) {
 		EnclosingMethodIndex enclosingMethodIndex = this.jarIndex.getIndex(EnclosingMethodIndex.class);
 		// Only local and anonymous classes may have the EnclosingMethod attribute
 		return enclosingMethodIndex.hasEnclosingMethod(classEntry);
+	}
+
+	/**
+	 * Verifies that the provided {@code parameter} has a valid index for its parent method.
+	 * This method validates both the upper and lower bounds of the parent method's index range.
+	 *
+	 * <p>Note that this method could still return {@code true} for an invalid index in the case that the index is impossible due to double-size parameters --
+	 * for example, if the index is 4 and there's a double at index 3, the index would be invalid.
+	 * But honestly, we at <a href=https://quiltmc.org>QuiltMC</a> doubt that that's a situation you'll ever be running into.
+	 * If it is, complain <a href=https://github.com/QuiltMC/enigma/issues>in our issue tracker</a> about us writing this whole comment instead of implementing that functionality.
+	 *
+	 * @param parameter the parameter to validate
+	 * @return whether the index is valid
+	 */
+	@SuppressWarnings("DataFlowIssue")
+	public boolean validateParameterIndex(LocalVariableEntry parameter) {
+		MethodEntry parent = parameter.getParent();
+		EntryIndex index = this.jarIndex.getIndex(EntryIndex.class);
+
+		if (index.hasMethod(parent)) {
+			AtomicInteger maxLocals = new AtomicInteger(-1);
+			ClassEntry parentClass = parent.getParent();
+
+			// find max_locals for method, representing the number of parameters it receives (JVMS§4.7.3)
+			// note: parent class cannot be null, warning suppressed
+			ClassNode classNode = this.getClassProvider().get(parentClass.getFullName());
+			if (classNode != null) {
+				classNode.methods.stream()
+						.filter(node -> node.name.equals(parent.getName()) && node.desc.equals(parent.getDesc().toString()))
+						.findFirst().ifPresent(node -> {
+							// occasionally it's possible to run into a method that has parameters, yet whose max locals is 0. java is stupid. we ignore those cases
+							if (!(node.parameters != null && node.parameters.size() > node.maxLocals)) {
+								maxLocals.set(node.maxLocals);
+							}
+						});
+			}
+
+			// if maxLocals is -1 it's not found for the method and should be ignored
+			return index.validateParameterIndex(parameter) && (maxLocals.get() == -1 || parameter.getIndex() <= maxLocals.get() - 1);
+		}
+
+		return false;
 	}
 
 	public JarExport exportRemappedJar(ProgressListener progress) {
